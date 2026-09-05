@@ -19,12 +19,19 @@ from typing import Dict, Any, List, Optional
 def calculate_metrics(**kwargs) -> Dict[str, Any]:
     """
     Core domain algorithm for mascc-febrile-neutropenia-score.
+
+    Computes a weighted score from numeric inputs and classifies the result
+    into risk tiers with clinical recommendations.
     """
     params = {}
     for k, v in kwargs.items():
         if v is not None:
             try:
-                params[k] = float(v)
+                fv = float(v)
+                # Reject non-finite values (NaN, inf, -inf)
+                if not math.isfinite(fv):
+                    continue
+                params[k] = fv
             except (ValueError, TypeError):
                 params[k] = str(v)
 
@@ -37,7 +44,7 @@ def calculate_metrics(**kwargs) -> Dict[str, Any]:
         score += nv * (1.0 / idx)
 
     rounded_score = round(score, 2)
-    
+
     # Classification / tiering
     if rounded_score < 10.0:
         tier = "Low / Standard"
@@ -66,9 +73,26 @@ def process_single(args) -> None:
 
 
 def process_batch(input_csv: str, output_csv: str) -> None:
+    """Process a CSV file of patient records and append scoring results.
+
+    Args:
+        input_csv: Path to input CSV file with patient data.
+        output_csv: Path to output CSV file for results.
+
+    Raises:
+        FileNotFoundError: If input_csv does not exist.
+        PermissionError: If output_csv cannot be written.
+        csv.Error: If input CSV is malformed.
+    """
+    import os
+    if not os.path.isfile(input_csv):
+        raise FileNotFoundError(f"Input CSV not found: {input_csv}")
+
     with open(input_csv, mode="r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         fieldnames = list(reader.fieldnames or [])
+        if not fieldnames:
+            raise ValueError(f"Input CSV has no headers or is empty: {input_csv}")
         rows = list(reader)
 
     out_fields = fieldnames + ["score", "classification", "clinical_recommendation"]
@@ -81,6 +105,11 @@ def process_batch(input_csv: str, output_csv: str) -> None:
         row_dict["classification"] = calc_res["classification"]
         row_dict["clinical_recommendation"] = calc_res["clinical_recommendation"]
         out_rows.append(row_dict)
+
+    # Ensure output directory exists
+    out_dir = os.path.dirname(output_csv)
+    if out_dir and not os.path.isdir(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
 
     with open(output_csv, mode="w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=out_fields)
@@ -108,10 +137,20 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
 
-    if args.command == "single":
-        args.func(args)
-    elif args.command == "batch":
-        process_batch(args.input, args.output)
+    try:
+        if args.command == "single":
+            args.func(args)
+        elif args.command == "batch":
+            process_batch(args.input, args.output)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except PermissionError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
