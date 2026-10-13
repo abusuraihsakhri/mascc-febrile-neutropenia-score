@@ -3,7 +3,7 @@ FastAPI REST API Server for Mascc Febrile Neutropenia Score.
 """
 from typing import Dict, Any, List, Literal
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, StrictBool
+from pydantic import BaseModel, StrictBool, ConfigDict
 from mascc_score import calculate_metrics
 from .base import AuditLogger, PHIGuard
 from .models import SystemTaskPayload, ConsensusDossier
@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
 
 class MASCCRequest(BaseModel):
     """Seven required criteria of the validated MASCC index."""
+    model_config = ConfigDict(extra="forbid")
     burden: Literal["none_mild", "moderate", "severe"]
     no_hypotension: StrictBool
     no_copd: StrictBool
