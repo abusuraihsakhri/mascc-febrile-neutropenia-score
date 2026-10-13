@@ -1,157 +1,162 @@
 #!/usr/bin/env python3
-"""
-MASCC Febrile Neutropenia Risk Index
-Identifies low-risk febrile neutropenic cancer patients suitable for outpatient oral antibiotics.
+"""Validated MASCC febrile neutropenia risk index (adult cancer patients).
 
-Zero-dependency Python implementation with single and batch evaluation.
-Author: Dr. Abu Suraih Sakhri
-License: MIT
-"""
+Points follow the original seven-variable MASCC index, maximum 26.
+A higher score indicates a lower risk of serious complications.
+This is risk stratification, not a stand-alone treatment/discharge decision.
 
+References:
+Klastersky et al. J Clin Oncol. 2000;18:3038-3051.
+IDSA 2010 guideline: https://doi.org/10.1093/cid/cir073
+ASCO/IDSA 2018 guideline: https://doi.org/10.1200/JCO.2017.77.6211
+"""
 import argparse
 import csv
 import json
-import math
+import os
 import sys
-from typing import Dict, Any, List, Optional
+import tempfile
+from pathlib import Path
+
+CRITERIA = (
+    "burden", "no_hypotension", "no_copd", "favorable_malignancy",
+    "no_dehydration", "outpatient_onset", "age_under_60",
+)
+BOOLEAN_CRITERIA = CRITERIA[1:]
+BURDEN_POINTS = {"none_mild": 5, "moderate": 3, "severe": 0}
+POINTS = {
+    "no_hypotension": 5,
+    "no_copd": 4,
+    "favorable_malignancy": 4,
+    "no_dehydration": 3,
+    "outpatient_onset": 3,
+    "age_under_60": 2,
+}
 
 
-def calculate_metrics(**kwargs) -> Dict[str, Any]:
+def _boolean(value, field):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str) and value.strip().lower() in ("yes", "true", "1"):
+        return True
+    if isinstance(value, str) and value.strip().lower() in ("no", "false", "0"):
+        return False
+    raise ValueError(f"{field} must be yes/no, true/false or 1/0")
+
+
+def calculate_metrics(*, burden, no_hypotension, no_copd,
+                      favorable_malignancy, no_dehydration,
+                      outpatient_onset, age_under_60):
+    """Compute the 0–26 MASCC score from all seven required clinical criteria.
+
+    'favorable_malignancy' means a solid tumor OR a hematologic malignancy
+    without prior invasive fungal infection. 'no_hypotension' requires
+    systolic BP >90 mmHg. 'no_dehydration' means IV rehydration not required.
+    'outpatient_onset' refers to status at fever onset.
     """
-    Core domain algorithm for mascc-febrile-neutropenia-score.
-
-    Computes a weighted score from numeric inputs and classifies the result
-    into risk tiers with clinical recommendations.
-    """
-    params = {}
-    for k, v in kwargs.items():
-        if v is not None:
-            try:
-                fv = float(v)
-                # Reject non-finite values (NaN, inf, -inf)
-                if not math.isfinite(fv):
-                    continue
-                params[k] = fv
-            except (ValueError, TypeError):
-                params[k] = str(v)
-
-    # Deterministic domain logic
-    numeric_vals = [val for val in params.values() if isinstance(val, (int, float))]
-    primary_val = numeric_vals[0] if numeric_vals else 1.0
-
-    score = primary_val
-    for idx, nv in enumerate(numeric_vals[1:], start=2):
-        score += nv * (1.0 / idx)
-
-    rounded_score = round(score, 2)
-
-    # Classification / tiering
-    if rounded_score < 10.0:
-        tier = "Low / Standard"
-        action = "Standard monitoring or negative cutoff"
-    elif rounded_score < 25.0:
-        tier = "Moderate / Intermediate"
-        action = "Close observation or secondary evaluation"
-    else:
-        tier = "High / Severe"
-        action = "Urgent clinical intervention or primary positive finding"
-
+    if not isinstance(burden, str) or burden.strip().lower() not in BURDEN_POINTS:
+        raise ValueError("burden must be none_mild, moderate or severe")
+    burden = burden.strip().lower()
+    raw = locals().copy()
+    components = {"burden": BURDEN_POINTS[burden]}
+    for field in BOOLEAN_CRITERIA:
+        components[field] = POINTS[field] if _boolean(raw[field], field) else 0
+    score = sum(components.values())
     return {
         "tool": "mascc-febrile-neutropenia-score",
-        "score": rounded_score,
-        "classification": tier,
-        "clinical_recommendation": action,
-        "inputs_evaluated": len(params),
+        "score": score,
+        "classification": "Low risk" if score >= 21 else "High risk",
+        "clinical_recommendation": (
+            "May be considered for outpatient management only after full clinical, "
+            "psychosocial and logistical assessment."
+            if score >= 21 else
+            "Higher risk of serious complications; inpatient assessment is generally indicated."
+        ),
+        "components": components,
+        "inputs_evaluated": len(CRITERIA),
+        "disclaimer": "Risk index only; febrile neutropenia needs urgent clinical assessment and empiric treatment.",
     }
 
 
-def process_single(args) -> None:
-    kwargs = vars(args)
-    kwargs.pop("func", None)
-    res = calculate_metrics(**kwargs)
-    print(json.dumps(res, indent=2))
+def process_batch(input_csv, output_csv):
+    """Evaluate a CSV with required MASCC criteria and optional synthetic case_id.
 
-
-def process_batch(input_csv: str, output_csv: str) -> None:
-    """Process a CSV file of patient records and append scoring results.
-
-    Args:
-        input_csv: Path to input CSV file with patient data.
-        output_csv: Path to output CSV file for results.
-
-    Raises:
-        FileNotFoundError: If input_csv does not exist.
-        PermissionError: If output_csv cannot be written.
-        csv.Error: If input CSV is malformed.
+    Fail before writing if any row is invalid. Do not use patient identifiers.
     """
-    import os
-    if not os.path.isfile(input_csv):
+    source, destination = Path(input_csv), Path(output_csv)
+    if source.resolve() == destination.resolve():
+        raise ValueError("Input and output CSV must be different files")
+    if not source.is_file():
         raise FileNotFoundError(f"Input CSV not found: {input_csv}")
-
-    with open(input_csv, mode="r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        fieldnames = list(reader.fieldnames or [])
-        if not fieldnames:
-            raise ValueError(f"Input CSV has no headers or is empty: {input_csv}")
-        rows = list(reader)
-
-    out_fields = fieldnames + ["score", "classification", "clinical_recommendation"]
-    out_rows = []
-
-    for r in rows:
-        calc_res = calculate_metrics(**r)
-        row_dict = dict(r)
-        row_dict["score"] = calc_res["score"]
-        row_dict["classification"] = calc_res["classification"]
-        row_dict["clinical_recommendation"] = calc_res["clinical_recommendation"]
-        out_rows.append(row_dict)
-
-    # Ensure output directory exists
-    out_dir = os.path.dirname(output_csv)
-    if out_dir and not os.path.isdir(out_dir):
-        os.makedirs(out_dir, exist_ok=True)
-
-    with open(output_csv, mode="w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=out_fields)
-        writer.writeheader()
-        writer.writerows(out_rows)
-
-    print(f"Processed {len(out_rows)} records -> {output_csv}")
+    with source.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        headers = reader.fieldnames
+        if not headers or len(headers) != len(set(headers)):
+            raise ValueError("CSV requires unique headers")
+        missing = [name for name in CRITERIA if name not in headers]
+        unexpected = [name for name in headers if name not in (*CRITERIA, "case_id")]
+        if missing or unexpected:
+            raise ValueError(f"CSV columns invalid; missing={missing}, unexpected={unexpected}")
+        rows = []
+        for line, row in enumerate(reader, start=2):
+            if None in row or any(value is None for value in row.values()):
+                raise ValueError(f"Malformed CSV record on line {line}")
+            try:
+                result = calculate_metrics(**{name: row[name] for name in CRITERIA})
+            except ValueError as exc:
+                raise ValueError(f"Line {line}: {exc}") from exc
+            rows.append({
+                **row,
+                "score": result["score"],
+                "classification": result["classification"],
+                "clinical_recommendation": result["clinical_recommendation"],
+            })
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=destination.parent,
+            prefix=".mascc-", suffix=".csv", delete=False
+        ) as output:
+            tmp_name = output.name
+            writer = csv.DictWriter(output, fieldnames=[
+                *headers, "score", "classification", "clinical_recommendation"
+            ])
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(tmp_name, destination)
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+    return len(rows)
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="MASCC Febrile Neutropenia Risk Index")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # Single parser
-    single_parser = subparsers.add_parser("single", help="Evaluate single case")
-    single_parser.add_argument("--v1", type=float, default=10.0, help="Primary parameter")
-    single_parser.add_argument("--v2", type=float, default=5.0, help="Secondary parameter")
-    single_parser.add_argument("--v3", type=float, default=2.0, help="Tertiary parameter")
-    single_parser.set_defaults(func=process_single)
-
-    # Batch parser
-    batch_parser = subparsers.add_parser("batch", help="Process batch CSV")
-    batch_parser.add_argument("-i", "--input", required=True, help="Input CSV")
-    batch_parser.add_argument("-o", "--output", default="results.csv", help="Output CSV")
-
+    parser = argparse.ArgumentParser(description="MASCC febrile neutropenia risk index (0–26)")
+    sub = parser.add_subparsers(dest="command", required=True)
+    single = sub.add_parser("single", help="Score all seven MASCC criteria")
+    single.add_argument("--burden", choices=list(BURDEN_POINTS), required=True)
+    for field in BOOLEAN_CRITERIA:
+        single.add_argument("--" + field.replace("_", "-"),
+                            choices=["yes", "no"], required=True)
+    batch = sub.add_parser("batch", help="Score synthetic/de-identified CSV records")
+    batch.add_argument("-i", "--input", required=True)
+    batch.add_argument("-o", "--output", default="results.csv")
     args = parser.parse_args(argv)
-
     try:
         if args.command == "single":
-            args.func(args)
-        elif args.command == "batch":
-            process_batch(args.input, args.output)
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    except PermissionError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+            values = {field: getattr(args, field) for field in CRITERIA}
+            print(json.dumps(calculate_metrics(**values), indent=2))
+        else:
+            count = process_batch(args.input, args.output)
+            print(f"Processed {count} records -> {args.output}")
+    except (ValueError, OSError, csv.Error) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

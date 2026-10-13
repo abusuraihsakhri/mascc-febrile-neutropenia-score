@@ -1,207 +1,63 @@
-# MASCC Febrile Neutropenia Score
+# MASCC Febrile Neutropenia Risk Index
 
-> **Domain:** Clinical Decision Support & Biomedical Computing
-> **Reference Guidelines:** Standard Clinical Formulations & ISO/IEC Quality Frameworks
+Clinical reference implementation of the seven-component **Multinational Association for Supportive Care in Cancer (MASCC)** risk index for adults with febrile neutropenia. Higher scores mean lower risk of serious complications.
 
-<div align="center">
+**Clinical caution:** A score ≥21 identifies a lower-risk group; it is **not** by itself a decision to discharge. Prompt clinical evaluation and empiric treatment, patient stability, comorbidities, psychosocial factors, and follow-up are essential.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
+## Browser calculator
 
-</div>
+The static, responsive browser application in [web/index.html](web/index.html) calculates the MASCC index locally. It requires no external JavaScript packages, server, Python interpreter, patient identity, or browser storage. JSON results can be downloaded. Use synthetic/de-identified cases only. The root `index.html` mirrors the app for branch-based static hosting.
 
----
+## MASCC criteria
 
-## Overview
+| Characteristic | Points |
+| --- | ---: |
+| Burden of illness: no/mild, moderate, or severe (exclusive) | 5 / 3 / 0 |
+| No hypotension (systolic BP >90 mmHg) | 5 |
+| No COPD | 4 |
+| Solid tumor or hematologic malignancy without previous invasive fungal infection | 4 |
+| No dehydration requiring IV fluids | 3 |
+| Outpatient status at onset of fever | 3 |
+| Age <60 years | 2 |
 
-The MASCC Febrile Neutropenia Risk Index identifies low-risk febrile neutropenic cancer patients who may be suitable for outpatient oral antibiotics. This implementation provides:
+**Range:** 0–26. **Low risk:** ≥21. **High risk:** <21. All seven criteria are required; missing values cannot silently receive favorable points.
 
-- **Single case evaluation** via CLI or API
-- **Batch processing** of CSV patient records
-- **Multi-agent consensus** with specialized workers (QC, Safety, Protocol Conformance)
-- **Zero-PHI outbound guard** preventing protected health information leakage
-- **Tamper-evident HMAC-SHA256 audit trail** for all evaluations
-- **FastAPI REST API** with Prometheus metrics endpoint
+Clinical references: [IDSA 2010](https://doi.org/10.1093/cid/cir073), [ASCO/IDSA 2018 outpatient guidance](https://doi.org/10.1200/JCO.2017.77.6211), and Klastersky J et al., *J Clin Oncol.* 2000;18:3038–3051.
 
-Author: Dr. Abu Suraih Sakhri
-License: MIT
+## Install and use
 
----
-
-## Installation
+Requires Python 3.10+.
 
 ```bash
-# Clone the repository
-git clone https://github.com/abusuraihsakhri/mascc-febrile-neutropenia-score.git
-cd mascc-febrile-neutropenia-score
-
-# Install dependencies
-pip install -e .
-
-# Or install with development dependencies
-pip install -e ".[dev]"
-```
-
-### Requirements
-
-- Python 3.10+
-- pydantic >= 2.0
-- fastapi >= 0.110
-- uvicorn >= 0.27
-
----
-
-## Usage
-
-### Command Line Interface
-
-#### Single Case Evaluation
-```bash
-python mascc_score.py single --v1 14.5 --v2 4.2 --v3 1.8
-```
-
-#### Batch CSV Processing
-```bash
+python -m pip install -e ".[dev]"
+python mascc_score.py single --burden none_mild --no-hypotension yes --no-copd yes --favorable-malignancy yes --no-dehydration yes --outpatient-onset yes --age-under-60 yes
 python mascc_score.py batch -i sample.csv -o results.csv
+python -m pytest -q
 ```
 
-#### Enterprise CLI (with audit trail)
-```bash
-# Run single task evaluation
-python cli.py audit --task-id TASK-001 --primary 28.5 --secondary 14.2
+After installation, `mascc` runs the clinical scoring command. `mascc-audit-demo` runs the separate legacy component-audit CLI. CSV inputs require the seven named criteria (`burden`, `no_hypotension`, `no_copd`, `favorable_malignancy`, `no_dehydration`, `outpatient_onset`, `age_under_60`) and permit only an optional synthetic `case_id` column. Boolean values must be `yes/no`, `true/false`, or `1/0`.
 
-# Batch process with audit trail
-python cli.py batch -i sample.csv -o results.csv
-
-# Verify audit trail integrity
-python cli.py verify-audit
-
-# Interactive chat query
-python cli.py chat "Explain the scoring methodology"
-```
-
-### REST API Server
-```bash
-python cli.py serve --host 0.0.0.0 --port 8000
-```
-
-API Endpoints:
-- `GET /health` - Health check
-- `GET /metrics` - Prometheus metrics
-- `POST /api/audit` - Submit task for evaluation
-- `POST /api/chat` - Query the supervisory chat
-- `GET /api/audit/logs` - Retrieve audit trail
-
----
-
-## Input Data Schema
-
-### CSV Batch Format
-
-| Field | Description | Requirement |
-|:------|:------------|:------------|
-| `Patient_ID` | Unique patient identifier | Required |
-| `v1` | Primary measurement parameter | Required |
-| `v2` | Secondary measurement parameter | Required |
-| `v3` | Tertiary measurement parameter | Required |
-
-### Scoring Algorithm
-
-The MASCC score is computed as a weighted sum of input parameters:
-
-```
-score = v1 + v2/2 + v3/3 + ...
-```
-
-Results are classified into risk tiers:
-- **Low / Standard** (score < 10): Standard monitoring
-- **Moderate / Intermediate** (10 <= score < 25): Close observation
-- **High / Severe** (score >= 25): Urgent clinical intervention
-
----
-
-## Security Features
-
-### Zero-PHI Outbound Guard
-Active pattern matching blocks outbound data containing:
-- Medical Record Numbers (MRN)
-- Social Security Numbers
-- Phone numbers
-- Email addresses
-- Patient names and DOB
-
-### HMAC-SHA256 Audit Trail
-- Cryptographically chained log entries
-- Tamper-evident verification
-- Each entry signed with SHA-256 HMAC
-
-**Important:** Set the `AUDIT_SECRET_KEY` environment variable in production to ensure audit trail persistence across restarts. Without it, a random session key is generated.
+## API
 
 ```bash
-export AUDIT_SECRET_KEY="your-secure-key-here"
+python cli.py serve --host 127.0.0.1 --port 8000
 ```
 
----
+`POST /api/score` accepts all seven criteria as JSON (binary fields are booleans) and returns the score, classification and point breakdown. FastAPI generates the definitive OpenAPI spec at `/openapi.json` and interactive documentation at `/docs`.
 
-## Testing
+The retained `/api/audit`, `/api/chat`, `/api/audit/logs` and `/metrics` endpoints are **non-clinical experimental demonstrations**. They do not calculate the MASCC risk index. The mock chat provider performs no model inference or clinical verification. The audit ledger is held in memory and the limited pattern-based identifier guard does **not** establish HIPAA compliance. Never provide identifying patient information to these interfaces. The enrichment/simulator modules are likewise experimental, not validated clinical tools.
+
+## Docker
 
 ```bash
-# Run all tests
-pytest -v
-
-# Run with coverage
-pytest -v --cov=.
-
-# Run specific test files
-pytest test_mascc_score.py -v
-pytest tests/ -v
+export AUDIT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+docker compose up --build
 ```
 
-### Simulation Benchmark
-```bash
-python simulator.py 1000
-```
+The key is operator-supplied; audit records are not persisted. The server has no authentication; bind it only to a trusted environment. The browser calculator does not use this server.
 
----
+## Testing, privacy and deployment
 
-## Docker Deployment
+CI runs pytest and compilation across Python 3.10–3.12, plus command-line and JavaScript syntax checks. The browser application needs a modern Chromium, Firefox or Safari browser; no backend Python, Pyodide, analytics, or browser storage are required. GitHub Pages deployment uses `web/`, while the root `index.html` supports branch-based hosting.
 
-```bash
-docker build -t mascc-febrile-neutropenia-score .
-docker run -p 8000:8000 -e AUDIT_SECRET_KEY="your-key" mascc-febrile-neutropenia-score
-```
-
----
-
-## Project Structure
-
-```
-mascc-febrile-neutropenia-score/
-├── agents/                  # Enterprise agent framework
-│   ├── __init__.py
-│   ├── api.py              # FastAPI REST server
-│   ├── base.py             # Security, PHI guard, audit trail
-│   ├── learning.py         # Bayesian calibration engine
-│   ├── llm_factory.py      # LLM provider factory
-│   ├── metrics.py          # Prometheus metrics collector
-│   ├── models.py           # Pydantic data models
-│   ├── streamer.py         # WebSocket telemetry streamer
-│   ├── supervisor.py       # Multi-agent orchestrator
-│   └── workers.py          # Specialized domain workers
-├── tests/                  # Test suite
-│   ├── test_enrichment.py
-│   └── test_mascc_febrile_neutropenia_score.py
-├── test_mascc_score.py     # Core scoring tests
-├── cli.py                  # Enterprise CLI entry point
-├── mascc_score.py          # Core scoring algorithm
-├── enrichment.py           # Enrichment feature modules
-├── simulator.py            # High-throughput simulation
-├── sample.csv              # Sample patient data
-├── pyproject.toml          # Project metadata and dependencies
-├── Dockerfile              # Container build config
-└── docker-compose.yml      # Multi-service orchestration
-```
+MIT licensed; see [LICENSE](LICENSE).
