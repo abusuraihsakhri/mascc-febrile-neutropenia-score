@@ -1,55 +1,85 @@
-import math
+"""Regression and boundary tests for the clinical MASCC index."""
+import csv
 import pytest
-from mascc_score import calculate_metrics, process_batch
+from mascc_score import calculate_metrics, process_batch, main
+
+BASE = dict(burden="none_mild", no_hypotension=True, no_copd=True,
+            favorable_malignancy=True, no_dehydration=True,
+            outpatient_onset=True, age_under_60=True)
 
 
-def test_mascc_score_single():
-    res = calculate_metrics(v1=12.0, v2=4.0)
-    assert "score" in res
-    assert "classification" in res
-    assert res["score"] > 0
+def test_maximum_is_26_and_low_risk():
+    result = calculate_metrics(**BASE)
+    assert result["score"] == 26
+    assert result["classification"] == "Low risk"
+    assert sum(result["components"].values()) == 26
 
 
-def test_mascc_score_batch(tmp_path):
-    csv_in = tmp_path / "in.csv"
-    csv_out = tmp_path / "out.csv"
-    csv_in.write_text("Patient,v1,v2\nPat_001,15.0,3.0\nPat_002,5.0,1.0\n", encoding="utf-8")
-
-    process_batch(str(csv_in), str(csv_out))
-    assert csv_out.exists()
-    content = csv_out.read_text(encoding="utf-8")
-    assert "Pat_001" in content
-    assert "score" in content
+def test_minimum_is_0_and_high_risk():
+    inputs = {**{key: False for key in BASE if key != "burden"}, "burden": "severe"}
+    result = calculate_metrics(**inputs)
+    assert result["score"] == 0
+    assert result["classification"] == "High risk"
 
 
-def test_calculate_metrics_rejects_non_finite():
-    """Non-finite values (NaN, inf) should be rejected, not propagate."""
-    res = calculate_metrics(v1=10.0, v2=float("nan"), v3=float("inf"))
-    assert math.isfinite(res["score"])
-    assert res["score"] == 10.0
+def test_each_component_and_boundary():
+    assert calculate_metrics(**{**BASE, "burden": "moderate"})["score"] == 24
+    assert calculate_metrics(**{**BASE, "burden": "severe"})["score"] == 21
+    assert calculate_metrics(**{**BASE, "no_hypotension": False})["score"] == 21
+    assert calculate_metrics(**{**BASE, "no_copd": False})["score"] == 22
+    assert calculate_metrics(**{**BASE, "favorable_malignancy": False})["score"] == 22
+    assert calculate_metrics(**{**BASE, "no_dehydration": False})["score"] == 23
+    assert calculate_metrics(**{**BASE, "outpatient_onset": False})["score"] == 23
+    assert calculate_metrics(**{**BASE, "age_under_60": False})["score"] == 24
+    assert calculate_metrics(**{**BASE, "no_hypotension": False, "age_under_60": False})["score"] == 19
 
 
-def test_calculate_metrics_classification_tiers():
-    """Verify classification boundaries."""
-    low = calculate_metrics(v1=5.0)
-    assert low["classification"] == "Low / Standard"
-
-    moderate = calculate_metrics(v1=15.0)
-    assert moderate["classification"] == "Moderate / Intermediate"
-
-    high = calculate_metrics(v1=30.0)
-    assert high["classification"] == "High / Severe"
-
-
-def test_process_batch_missing_file(tmp_path):
-    """process_batch raises FileNotFoundError for missing input."""
-    with pytest.raises(FileNotFoundError):
-        process_batch(str(tmp_path / "nonexistent.csv"), str(tmp_path / "out.csv"))
-
-
-def test_process_batch_empty_headers(tmp_path):
-    """process_batch raises ValueError for CSV with no headers."""
-    csv_in = tmp_path / "empty.csv"
-    csv_in.write_text("", encoding="utf-8")
+@pytest.mark.parametrize("key,value", [
+    ("burden", "unknown"), ("burden", ""),
+    ("no_copd", ""), ("age_under_60", "maybe"),
+    ("no_hypotension", None), ("outpatient_onset", float("nan")),
+])
+def test_rejects_invalid_input(key, value):
     with pytest.raises(ValueError):
-        process_batch(str(csv_in), str(tmp_path / "out.csv"))
+        calculate_metrics(**{**BASE, key: value})
+
+
+def test_requires_all_criteria():
+    with pytest.raises(TypeError):
+        calculate_metrics(burden="moderate")
+
+
+def test_csv_roundtrip_and_no_partial_output(tmp_path):
+    source, dest = tmp_path / "cases.csv", tmp_path / "out.csv"
+    source.write_text(
+        "case_id,burden,no_hypotension,no_copd,favorable_malignancy,no_dehydration,outpatient_onset,age_under_60\n"
+        "CASE-001,none_mild,yes,yes,yes,yes,yes,yes\n"
+        "CASE-002,severe,no,no,no,no,no,no\n", encoding="utf-8"
+    )
+    assert process_batch(source, dest) == 2
+    with dest.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [int(row["score"]) for row in rows] == [26, 0]
+    source.write_text(source.read_text().replace("CASE-002,severe", "CASE-002,invalid"))
+    with pytest.raises(ValueError, match="Line 3"):
+        process_batch(source, dest)
+    assert dest.read_text()  # existing output preserved
+
+
+def test_csv_rejects_unsafe_format(tmp_path):
+    source, dest = tmp_path / "cases.csv", tmp_path / "out.csv"
+    source.write_text("Patient,v1,v2\nSomeone,1,2\n")
+    with pytest.raises(ValueError, match="columns invalid"):
+        process_batch(source, dest)
+    assert not dest.exists()
+    with pytest.raises(ValueError):
+        process_batch(source, source)
+
+
+def test_cli_single_requires_explicit_values(capsys):
+    argv = ["single", "--burden", "none_mild"]
+    for name in BASE:
+        if name != "burden":
+            argv.extend(["--" + name.replace("_", "-"), "yes"])
+    assert main(argv) == 0
+    assert '"score": 26' in capsys.readouterr().out

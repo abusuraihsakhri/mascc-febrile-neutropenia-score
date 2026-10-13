@@ -1,112 +1,114 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Mascc Febrile Neutropenia Score API",
-    "description": "Enterprise Distributed Component Platform (Clinical & Cryptographic AI) adhering to CAP / CLSI / NIST Standards.",
-    "version": "3.0.0-ENTERPRISE",
-    "contact": {
-      "name": "Dr. Abu Suraih Sakhri",
-      "url": "https://github.com/abusuraihsakhri"
-    }
+    "title": "MASCC Febrile Neutropenia Score API",
+    "version": "3.0.0",
+    "description": "Reference summary. For authoritative schema use /openapi.json from FastAPI."
   },
   "paths": {
     "/health": {
       "get": {
-        "summary": "Health and metadata check",
+        "summary": "Health status",
         "responses": {
           "200": {
-            "description": "System optimal"
+            "description": "Successful response"
           }
         }
       }
     },
-    "/metrics": {
-      "get": {
-        "summary": "Prometheus operational metrics",
+    "/api/score": {
+      "post": {
+        "summary": "Validated MASCC risk index (seven required criteria)",
+        "description": "0–26 points; ≥21 indicates lower risk; not a disposition decision",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "burden": {
+                    "enum": [
+                      "none_mild",
+                      "moderate",
+                      "severe"
+                    ]
+                  },
+                  "no_hypotension": {
+                    "type": "boolean"
+                  },
+                  "no_copd": {
+                    "type": "boolean"
+                  },
+                  "favorable_malignancy": {
+                    "type": "boolean"
+                  },
+                  "no_dehydration": {
+                    "type": "boolean"
+                  },
+                  "outpatient_onset": {
+                    "type": "boolean"
+                  },
+                  "age_under_60": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "burden",
+                  "no_hypotension",
+                  "no_copd",
+                  "favorable_malignancy",
+                  "no_dehydration",
+                  "outpatient_onset",
+                  "age_under_60"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Prometheus text metrics"
+            "description": "Successful response"
           }
         }
       }
     },
     "/api/audit": {
       "post": {
-        "summary": "Dispatch task payload across specialized workers",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "task_id": {
-                    "type": "string"
-                  },
-                  "target_identifier": {
-                    "type": "string"
-                  },
-                  "primary_metric": {
-                    "type": "number"
-                  },
-                  "secondary_metric": {
-                    "type": "number"
-                  },
-                  "status_descriptor": {
-                    "type": "string"
-                  },
-                  "is_critical_flag": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "task_id",
-                  "target_identifier",
-                  "primary_metric"
-                ]
-              }
-            }
-          }
-        },
+        "summary": "Legacy non-clinical audit demo",
         "responses": {
           "200": {
-            "description": "Consensus dossier with HMAC signature"
+            "description": "Successful response"
           }
         }
       }
     },
     "/api/chat": {
       "post": {
-        "summary": "Air-gapped supervisory conversational assistant",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "query"
-                ]
-              }
-            }
-          }
-        },
+        "summary": "Non-clinical mock responder",
         "responses": {
           "200": {
-            "description": "Supervisory response"
+            "description": "Successful response"
           }
         }
       }
     },
     "/api/audit/logs": {
       "get": {
-        "summary": "Retrieve and cryptographically verify HMAC audit trail",
+        "summary": "In-memory demonstration audit trail",
         "responses": {
           "200": {
-            "description": "Cryptographic audit trail"
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "JSON demonstration counters",
+        "responses": {
+          "200": {
+            "description": "Successful response"
           }
         }
       }

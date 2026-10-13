@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="MASCC febrile neutropenia risk index: seven clinical criteria, 0–26 points.">
+<title>MASCC Febrile Neutropenia Risk Index</title>
+<style>
+:root{color-scheme:dark;--bg:#0c1320;--panel:#152235;--line:#32465e;--fg:#f3f7fd;--muted:#c6d2e0;--accent:#8dbdff}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.5}
+main{max-width:990px;margin:0 auto;padding:clamp(1rem,4vw,2.4rem)}
+header{margin-bottom:1.5rem}h1{font-size:clamp(1.55rem,3vw,2.3rem);line-height:1.2;margin:.15rem 0}
+h2{font-size:1.15rem;margin:0 0 1rem}p{margin:.5rem 0}.muted{color:var(--muted)}
+.layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:1rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1.35rem}
+.field{margin-bottom:1rem}label{display:block;font-weight:650;font-size:.95rem;margin-bottom:.4rem}
+.hint{font-size:.82rem;color:var(--muted);display:block;margin-top:.2rem}
+select{width:100%;padding:.7rem .8rem;color:var(--fg);background:var(--bg);border:1px solid #647c98;border-radius:7px;font:inherit}
+select:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+button{padding:.65rem .95rem;border-radius:7px;border:1px solid var(--accent);font:inherit;font-weight:650;cursor:pointer}
+.primary{background:var(--accent);color:#06182c}.secondary{background:transparent;color:var(--fg)}
+.actions{display:flex;flex-wrap:wrap;gap:.6rem}.score{font-size:4rem;font-weight:750;line-height:1.05;letter-spacing:-.04em}
+.status{font-size:1.1rem;font-weight:700;margin:.65rem 0}.details{margin:1rem 0 0;padding:0;list-style:none}
+.details li{display:flex;justify-content:space-between;gap:.8rem;padding:.45rem 0;border-bottom:1px solid var(--line)}
+.note{font-size:.87rem;color:var(--muted);margin-top:1rem}
+.alert{border-left:4px solid #e3b761;padding:.7rem .9rem;background:#332b20;margin:1rem 0}
+.result-blank{color:var(--muted)}
+footer{margin-top:1.25rem;font-size:.86rem;color:var(--muted)}
+a{color:#a9cdff}a:hover{text-decoration-thickness:2px}
+@media(max-width:730px){.layout{grid-template-columns:1fr}.card{padding:1rem}.score{font-size:3.3rem}}
+@media(prefers-reduced-motion:no-preference){button{transition:background-color .15s}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<p class="muted">Clinical risk stratification • Adult febrile neutropenia</p>
+<h1>MASCC Risk Index</h1>
+<p class="muted">Validated seven-component index (0–26 points). Higher scores indicate lower complication risk.</p>
+</header>
+<div class="alert" role="note"><strong>Clinical safety:</strong> Fever with neutropenia warrants prompt assessment and empiric treatment. A score ≥21 is not, by itself, a discharge recommendation; clinical stability, comorbidities, follow-up and logistics must also be assessed.</div>
+<div class="layout">
+<section class="card" aria-labelledby="criteria-heading">
+<h2 id="criteria-heading">Clinical criteria</h2>
+<form id="calculator">
+<div class="field"><label for="burden">Burden of illness</label>
+<select id="burden" name="burden" required>
+<option value="" selected disabled>Select severity…</option>
+<option value="none_mild">No or mild symptoms (+5)</option>
+<option value="moderate">Moderate symptoms (+3)</option>
+<option value="severe">Severe symptoms (+0)</option>
+</select></div>
+<div id="binary-fields"></div>
+<div class="actions"><button class="primary" type="submit">Calculate MASCC score</button><button class="secondary" type="reset">Clear</button></div>
+</form>
+</section>
+<section class="card" aria-labelledby="result-heading" aria-live="polite">
+<h2 id="result-heading">Score and interpretation</h2>
+<div id="result" class="result-blank">Complete every criterion and select Calculate.</div>
+<div id="result-actions" class="actions" hidden><button id="download" class="secondary" type="button">Download result (JSON)</button></div>
+<p class="note">All calculations run locally in this browser. No network request, account, patient identifier or storage is required. Use synthetic/de-identified data only.</p>
+</section>
+</div>
+<footer>
+<p>MASCC index: <a href="https://doi.org/10.1093/cid/cir073" target="_blank" rel="noopener noreferrer">IDSA clinical guideline (2010)</a>. Outpatient assessment: <a href="https://doi.org/10.1200/JCO.2017.77.6211" target="_blank" rel="noopener noreferrer">ASCO/IDSA guideline (2018)</a>.</p>
+<p>Educational clinical decision support, not a substitute for professional judgment or institutional febrile neutropenia protocols. MIT license.</p>
+</footer>
+</main>
+<script>
+"use strict";
+const criteria=[
+  ["no_hypotension","No hypotension","Systolic blood pressure >90 mmHg",5],
+  ["no_copd","No chronic obstructive pulmonary disease","COPD absent",4],
+  ["favorable_malignancy","Favorable malignancy criterion","Solid tumor, OR hematologic malignancy without prior invasive fungal infection",4],
+  ["no_dehydration","No dehydration requiring IV fluids","Parenteral hydration not required",3],
+  ["outpatient_onset","Outpatient at fever onset","Fever began before admission",3],
+  ["age_under_60","Age under 60 years","Age <60, not ≤60",2]
+];
+const container=document.getElementById("binary-fields");
+for(const [id,label,hint,points] of criteria){
+ const wrap=document.createElement("div");wrap.className="field";
+ const labelEl=document.createElement("label");labelEl.htmlFor=id;labelEl.textContent=label;
+ const select=document.createElement("select");select.id=id;select.name=id;select.required=true;
+ for(const [value,text,disabled] of [["","Select yes or no…",true],["yes","Yes (+"+points+")",false],["no","No (+0)",false]]){
+  const opt=document.createElement("option");opt.value=value;opt.textContent=text;opt.disabled=disabled;if(value==="")opt.selected=true;select.append(opt);
+ }
+ const help=document.createElement("span");help.className="hint";help.textContent=hint;
+ wrap.append(labelEl,select,help);container.append(wrap);
+}
+const form=document.getElementById("calculator");
+const output=document.getElementById("result");
+const controls=document.getElementById("result-actions");
+let lastResult=null;
+function score(formValues){
+ const b=formValues.get("burden");
+ if(!["none_mild","moderate","severe"].includes(b))throw new Error("Select burden of illness.");
+ const components={burden:({none_mild:5,moderate:3,severe:0})[b]};
+ for(const [id,, ,points] of criteria){
+  const value=formValues.get(id);
+  if(value!=="yes"&&value!=="no")throw new Error("Complete every criterion.");
+  components[id]=value==="yes"?points:0;
+ }
+ const total=Object.values(components).reduce((a,b)=>a+b,0);
+ return {score:total,classification:total>=21?"Low risk":"High risk",components,
+  interpretation:total>=21?"Consider outpatient management only after complete clinical, psychosocial and logistical assessment.":"Higher risk of serious complications; inpatient assessment is generally indicated."};
+}
+form.addEventListener("submit",event=>{
+ event.preventDefault();
+ try{
+  const result=score(new FormData(form));lastResult=result;
+  output.replaceChildren();
+  const big=document.createElement("div");big.className="score";big.textContent=result.score+" / 26";
+  const status=document.createElement("div");status.className="status";status.textContent=result.classification+" (cutoff: 21)";
+  const summary=document.createElement("p");summary.textContent=result.interpretation;
+  const list=document.createElement("ul");list.className="details";list.setAttribute("aria-label","Point breakdown");
+  const labels=[["burden","Burden of illness"],...criteria.map(x=>[x[0],x[1]])];
+  for(const [key,name] of labels){
+   const item=document.createElement("li");const title=document.createElement("span");title.textContent=name;
+   const points=document.createElement("strong");points.textContent="+"+result.components[key];item.append(title,points);list.append(item);
+  }
+  output.append(big,status,summary,list);
+  controls.hidden=false;
+ }catch(error){lastResult=null;output.textContent=error.message;controls.hidden=true;}
+});
+form.addEventListener("reset",()=>{
+ lastResult=null;controls.hidden=true;output.textContent="Complete every criterion and select Calculate.";
+});
+document.getElementById("download").addEventListener("click",()=>{
+ if(!lastResult)return;
+ const blob=new Blob([JSON.stringify(lastResult,null,2)+"\n"],{type:"application/json"});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");a.href=url;a.download="mascc-risk-score.json";a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+</script>
+</body>
+</html>
