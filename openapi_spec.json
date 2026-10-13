@@ -2,13 +2,18 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MASCC Febrile Neutropenia Score API",
-    "version": "3.0.1",
+    "version": "3.0.0",
     "description": "Reference summary. For authoritative schema use /openapi.json from FastAPI."
   },
   "paths": {
     "/health": {
       "get": {
-        "summary": "Health status"
+        "summary": "Health status",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       }
     },
     "/api/score": {
@@ -60,27 +65,52 @@
               }
             }
           }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
         }
       }
     },
     "/api/audit": {
       "post": {
-        "summary": "Legacy non-clinical audit demo"
+        "summary": "Legacy non-clinical audit demo",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       }
     },
     "/api/chat": {
       "post": {
-        "summary": "Non-clinical mock responder"
+        "summary": "Non-clinical mock responder",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       }
     },
     "/api/audit/logs": {
       "get": {
-        "summary": "In-memory demonstration audit trail"
+        "summary": "In-memory demonstration audit trail",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       }
     },
     "/metrics": {
       "get": {
-        "summary": "JSON demonstration counters"
+        "summary": "JSON demonstration counters",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       }
     }
   }
