@@ -20,6 +20,8 @@ def test_api_rejects_missing_or_coerced_inputs():
     with pytest.raises(ValidationError):
         MASCCRequest(**{**VALID, "no_hypotension": "maybe"})
     with pytest.raises(ValidationError):
+        MASCCRequest(**{**VALID, "patient_name": "Example"})
+    with pytest.raises(ValidationError):
         MASCCRequest(**{key: v for key, v in VALID.items() if key != "no_copd"})
 
 
